@@ -1,3 +1,6 @@
+
+
+
 # JMdictDB reader
 
 The majority of the code (probably 98%) was written by Claude.
@@ -5,7 +8,7 @@ I mainly "made" this script to refine the editing/reviewing process and add some
 
 ## Demo
 
-!! add the video here after the repo is upload to github
+[![Video Demo]](https://github.com/user-attachments/assets/044cf320-48ff-41f9-ac22-6af7df34566e)
 
 ## Setup
 
