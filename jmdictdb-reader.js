@@ -100,7 +100,7 @@
       mode: 'dark',
       colors: {
         accent: '#8ab4f8', accentContrast: '#10151e',
-        bg: '#171a21', surface: '#222733', border: '#465061', borderLight: '#303846',
+        bg: '#171a21', surface: '#222733', border: '#465061', borderLight: '#101011',
         borderStrong: '#667286', text: '#e5e9f0', muted: '#a9b2c2', inputBg: '#222733',
         inputText: '#e5e9f0', green: '#83d49a', red: '#f08c8c', amber: '#e6bd70',
         diffAdd: '#83d49a', diffDel: '#f08c8c', diffHunk: '#a9b6f2',
@@ -547,21 +547,13 @@
     return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
   }
 
-  // Absolute-scale ASCII bar: length is the term's literal share of 100%,
-  // not relative to the top term, so two lists never look misleadingly
-  // similar just because their top term happens to dominate either way.
-  // Uses the eighth-block characters for sub-character precision so a
-  // small-but-real share (e.g. 0.6%) still shows a sliver instead of
-  // rounding away to nothing.
-  const BAR_WIDTH = 20;
-  const EIGHTHS = [' ', '\u258F', '\u258E', '\u258D', '\u258C', '\u258B', '\u258A', '\u2589', '\u2588'];
+  // Ten cells show the term's share of the selected total; the percentage
+  // beside the meter retains the exact value.
+  const BAR_WIDTH = 12;
+  const BAR_CELLS = 10;
   function buildBar(pct) {
-    const exact = (pct / 100) * BAR_WIDTH;
-    const full = Math.min(BAR_WIDTH, Math.floor(exact));
-    const frac = Math.round((exact - full) * 8);
-    let bar = '\u2588'.repeat(full);
-    if (frac > 0 && full < BAR_WIDTH) bar += '\u2588';
-    return bar;
+    const filled = Math.round((Math.max(0, Math.min(100, pct)) / 100) * BAR_CELLS);
+    return '[' + '\u2588'.repeat(filled) + '\u00B7'.repeat(BAR_CELLS - filled) + ']';
   }
 
   // Wrap each line of a Diff block in a <span> so CSS can colorize
@@ -696,6 +688,7 @@
     const barColor = hexToRgba(THEMES[state.themePreset].colors.accent, 0.16);
 
     function dataRows() { return Array.from(table.querySelectorAll('tr:not(.jmd-ngram-headrow)')); }
+    const hasMultipleResults = dataRows().filter(row => row.cells[COUNT_COL]).length > 1;
 
     // comma-format the raw counts, stashing the numeric value for later math
     dataRows().forEach(row => {
@@ -709,8 +702,10 @@
 
     // guarantee a percentage column, then add an include/exclude checkbox
     dataRows().forEach(row => {
-      while (row.cells.length < 3) { row.insertCell(); }
-      row.cells[PERC_COL].className = 'jmd-ngram-share';
+      if (hasMultipleResults) {
+        while (row.cells.length < 3) { row.insertCell(); }
+        row.cells[PERC_COL].className = 'jmd-ngram-share';
+      }
       const cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.checked = true;
@@ -753,13 +748,15 @@
         const cb = row.querySelector('input[type="checkbox"]');
         const checked = !!(cb && cb.checked);
         const count = Number(row.cells[COUNT_COL].dataset.count);
-        if (checked && total > 0) {
-          const pct = (count * 100) / total;
-          row.cells[PERC_COL].dataset.pct = pct.toFixed(1);
-          renderShareCell(row, pct, true);
-        } else {
-          row.cells[PERC_COL].dataset.pct = '';
-          renderShareCell(row, 0, false);
+        if (hasMultipleResults) {
+          if (checked && total > 0) {
+            const pct = (count * 100) / total;
+            row.cells[PERC_COL].dataset.pct = pct.toFixed(1);
+            renderShareCell(row, pct, true);
+          } else {
+            row.cells[PERC_COL].dataset.pct = '';
+            renderShareCell(row, 0, false);
+          }
         }
       });
       const totalEl = document.getElementById('jmd-ngram-total');
@@ -793,11 +790,11 @@
       let withPct = false;
       dataRows().forEach(row => {
         const cb = row.querySelector('input[type="checkbox"]');
-        if (cb && cb.checked) withPct = true;
+        if (hasMultipleResults && cb && cb.checked) withPct = true;
       });
 
       const rows = dataRows().map(row => {
-        const pct = row.cells[PERC_COL].dataset.pct;
+        const pct = hasMultipleResults ? row.cells[PERC_COL].dataset.pct : '';
         return {
           term: row.cells[WORD_COL].textContent.trim(),
           count: row.cells[COUNT_COL].textContent.trim(),
@@ -843,8 +840,12 @@
     const thCheck = document.createElement('th'); thCheck.appendChild(selectAll);
     const thTerm = document.createElement('th'); thTerm.textContent = 'Term';
     const thCount = document.createElement('th'); thCount.textContent = 'Count'; thCount.className = 'jmd-ngram-num';
-    const thShare = document.createElement('th'); thShare.textContent = 'Share'; thShare.className = 'jmd-ngram-share';
-    headRow.append(thTerm, thCount, thShare, thCheck);
+    headRow.append(thTerm, thCount);
+    if (hasMultipleResults) {
+      const thShare = document.createElement('th'); thShare.textContent = 'Share'; thShare.className = 'jmd-ngram-share';
+      headRow.appendChild(thShare);
+    }
+    headRow.appendChild(thCheck);
     table.insertBefore(headRow, table.firstChild);
 
     const total = document.createElement('div');
