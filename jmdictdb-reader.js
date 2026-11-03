@@ -1,8 +1,9 @@
 // ==UserScript==
-// @name         JMdictDB Reader
+// @name         JMdictDB — Cleaner Reader
 // @namespace    https://www.edrdg.org/jmwsgi/
-// @version      1.0.0
-// @author       Mostly Claude
+// @version      2.1.0
+// @description  Tames JMdictDB's Submissions/Edits/Entry pages by making whole entries collapsible ([+]/[-] to a one-line summary), plus a filter box and light tidy-up. Diffs auto-collapse too, and each entry gets a one-click N-gram count lookup. Plain, old-web look on purpose — no cards, no shadows, no rounded pills. Nothing is deleted, only collapsed.
+// @author       you
 // @match        https://www.edrdg.org/jmwsgi/*
 // @match        https://www.edrdg.org/~jwb/cgi-bin/ngramlookup*
 // @grant        GM_addStyle
@@ -20,10 +21,11 @@
    * ============================================================== */
 
   const DEFAULTS = {
-    accent: 'graphite',
+    theme: 'auto',            // 'light' | 'dark' | 'auto'
+    accent: 'classicblue',    // 'classicblue' | 'graphite' | 'green' | 'vermilion' | 'violet'
     fontSize: 13,             // px, 12-18
     density: 'compact',       // 'compact' | 'comfortable'
-    collapseEntries: false,    // collapse each whole submission to one line by default (the main feature)
+    collapseEntries: true,    // collapse each whole submission to one line by default (the main feature)
     collapseHistory: false,   // also collapse the History block inside an expanded entry
     collapseDiff: true,       // collapse each Diff block to a one-line [+] toggle by default
     diffHighlight: true,      // colorize +/-/@@ lines inside Diff blocks (text color only)
@@ -36,15 +38,15 @@
   const STORE_KEY = 'jmdictdb_cleaner_reader_settings_v2';
 
   function gmGet(key, fallback) {
-    try { if (typeof GM_getValue === 'function') return GM_getValue(key, fallback); } catch (e) {}
+    try { if (typeof GM_getValue === 'function') return GM_getValue(key, fallback); } catch (e) { }
     try {
       const raw = localStorage.getItem('jmdcr:' + key);
       return raw === null ? fallback : JSON.parse(raw);
     } catch (e) { return fallback; }
   }
   function gmSet(key, val) {
-    try { if (typeof GM_setValue === 'function') { GM_setValue(key, val); return; } } catch (e) {}
-    try { localStorage.setItem('jmdcr:' + key, JSON.stringify(val)); } catch (e) {}
+    try { if (typeof GM_setValue === 'function') { GM_setValue(key, val); return; } } catch (e) { }
+    try { localStorage.setItem('jmdcr:' + key, JSON.stringify(val)); } catch (e) { }
   }
 
   function loadState() {
@@ -57,15 +59,15 @@
   let state = loadState();
 
   function addStyle(css) {
-    try { if (typeof GM_addStyle === 'function') { GM_addStyle(css); return; } } catch (e) {}
+    try { if (typeof GM_addStyle === 'function') { GM_addStyle(css); return; } } catch (e) { }
     const s = document.createElement('style');
     s.textContent = css;
     document.head.appendChild(s);
   }
 
   function gmClipboard(text) {
-    try { if (typeof GM_setClipboard === 'function') { GM_setClipboard(text); return; } } catch (e) {}
-    try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text); } catch (e) {}
+    try { if (typeof GM_setClipboard === 'function') { GM_setClipboard(text); return; } } catch (e) { }
+    try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text); } catch (e) { }
   }
 
   /* ================================================================
@@ -76,13 +78,14 @@
    * ============================================================== */
 
   const ACCENTS = {
-    graphite:    '#333333',
-    slate:      '#475569', // neutral gray
-    emerald:    '#16A34A', // vibrant green
-    forest:     '#15803D', // darker green
-    sky:        '#2563EB', // modern blue
-    indigo:     '#4F46E5', // soft violet-blue
-    teal:       '#0F766E' // blue-green
+    graphite: '#333333',
+    slate: '#475569', // neutral gray
+    emerald: '#16A34A', // vibrant green
+    forest: '#15803D', // darker green
+    sky: '#2563EB', // modern blue
+    indigo: '#4F46E5', // soft violet-blue
+    teal: '#0F766E', // blue-green
+    white: '#dddfe2', // white
   };
 
   const CSS = `
@@ -93,8 +96,8 @@
 
   html{ --jmd-font-size: 13px; --jmd-accent: ${ACCENTS.graphite}; }
 
-  /* ---- color tokens (single theme, no dark mode) ---- */
-  html{
+  /* ---- light theme tokens (default) ---- */
+  html, html[data-jmd-theme="light"]{
     --jmd-bg: #ffffff;
     --jmd-surface-2: #f2f2f2;
     --jmd-border: #bbbbbb;
@@ -104,6 +107,19 @@
     --jmd-green: #006400;  --jmd-red: #a00000; --jmd-amber: #8a5a00;
     --jmd-diff-add: #006400; --jmd-diff-del: #a00000; --jmd-diff-hunk: #4a4a8a;
     --jmd-visited: #551A8B;
+    --jmd-article: #E8FFF0;
+  }
+  html[data-jmd-theme="dark"]{
+    --jmd-bg: #1c1c1c;
+    --jmd-surface-2: #262626;
+    --jmd-border: #444444;
+    --jmd-border-light: #333333;
+    --jmd-text: #dddddd;
+    --jmd-muted: #999999;
+    --jmd-green: #6fce6f;  --jmd-red: #e08080; --jmd-amber: #d3a44e;
+    --jmd-diff-add: #6fce6f; --jmd-diff-del: #e08080; --jmd-diff-hunk: #9aa0e0;
+    --jmd-visited: #c79ef0;
+    --jmd-article: #202120;
   }
 
   /* density tokens */
@@ -118,6 +134,9 @@
     font-family: var(--jmd-sans) !important;
     font-size: var(--jmd-font-size) !important;
     line-height: 1.4;
+  }
+  article {
+    background: var(--jmd-article) !important;
   }
   main.jmd-content{ max-width: 900px; margin: var(--jmd-sp-4) auto; padding: 0 var(--jmd-sp-4); }
   a{ color: var(--jmd-accent); }
@@ -198,6 +217,7 @@
   ol.senses{ margin: var(--jmd-sp-2) 0; padding-left: 1.5em; }
   li.sense{ margin-bottom: var(--jmd-sp-2); }
   span.pos .abbr{ color: #2f5fb3; text-decoration: underline dotted; cursor: help; }
+  html[data-jmd-theme="dark"] span.pos .abbr{ color:#8fb4f0; }
   span.misc .abbr{ color: var(--jmd-amber); text-decoration: underline dotted; cursor: help; }
   span.fld, span.dial{ font-size:.9em; color: var(--jmd-muted); font-style: italic; }
   div.note{ font-style: italic; color: var(--jmd-muted); font-size:.92em; margin: 2px 0; }
@@ -334,6 +354,7 @@
   #jmd-toolbar .jmd-brand{ font-weight:bold; color: var(--jmd-text); font-size:.9em; white-space:nowrap; }
   #jmd-toolbar .jmd-count{ font-size:.8em; color: var(--jmd-muted); white-space:nowrap; }
   #jmd-filter{ flex: 1 1 200px; min-width:140px; background:#fff; border:1px solid var(--jmd-border); padding:3px 6px; color:#111; font-size:.88em; }
+  html[data-jmd-theme="dark"] #jmd-filter{ background: var(--jmd-surface-2); color: var(--jmd-text); }
   .jmd-btn{ background: var(--jmd-surface-2); border:1px solid #888; color: var(--jmd-text); padding:3px 9px; font-size:.82em; cursor:pointer; }
   .jmd-btn:hover{ border-color: var(--jmd-accent); }
 
@@ -353,6 +374,8 @@
   .jmd-swatches button{ width:18px; height:18px; border:2px solid var(--jmd-border); background: var(--sw); cursor:pointer; padding:0; }
   .jmd-swatches button.jmd-active{ border-color: var(--jmd-text); }
   #jmd-opt-editor, #jmd-opt-capHeight, #jmd-opt-myname, #jmd-opt-myemail{ background:#fff; border:1px solid var(--jmd-border); padding:3px 6px; color:#111; box-sizing:border-box; }
+  html[data-jmd-theme="dark"] #jmd-opt-editor, html[data-jmd-theme="dark"] #jmd-opt-capHeight,
+  html[data-jmd-theme="dark"] #jmd-opt-myname, html[data-jmd-theme="dark"] #jmd-opt-myemail{ background: var(--jmd-surface-2); color: var(--jmd-text); }
   #jmd-opt-editor, #jmd-opt-myname, #jmd-opt-myemail{ width:100%; }
   #jmd-opt-capHeight{ width:60px; margin-left:6px; }
   .jmd-panel-actions{ text-align:right; }
@@ -374,8 +397,16 @@
    * 4. APPLY STATE -> CSS VARIABLES / DOM CLASSES
    * ============================================================== */
 
+  function effectiveTheme() {
+    if (state.theme === 'auto') {
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    return state.theme;
+  }
+
   function applyState() {
     const html = document.documentElement;
+    html.setAttribute('data-jmd-theme', effectiveTheme());
     html.setAttribute('data-jmd-density', state.density);
     html.style.setProperty('--jmd-font-size', state.fontSize + 'px');
     html.style.setProperty('--jmd-accent', ACCENTS[state.accent] || ACCENTS.graphite);
@@ -959,8 +990,17 @@
         <input id="jmd-filter" type="search" placeholder="Filter by seq#, word, reading, editor, gloss\u2026" />
         <button id="jmd-expand-all" class="jmd-btn" type="button">Expand all</button>
         <button id="jmd-collapse-all" class="jmd-btn" type="button">Collapse all</button>
+        <button id="jmd-theme-btn" class="jmd-btn" type="button" title="Toggle light/dark">theme</button>
         <button id="jmd-settings-btn" class="jmd-btn" type="button" title="Settings">settings</button>
         <div id="jmd-settings-panel" hidden>
+          <div class="jmd-panel-section">
+            <label>Theme</label>
+            <div class="jmd-segmented" data-role="theme">
+              <button type="button" data-value="light">Light</button>
+              <button type="button" data-value="dark">Dark</button>
+              <button type="button" data-value="auto">Auto</button>
+            </div>
+          </div>
           <div class="jmd-panel-section">
             <label>Accent color</label>
             <div class="jmd-swatches" data-role="accent">
@@ -971,6 +1011,7 @@
               <button type="button" data-value="sky" style="--sw:${ACCENTS.sky}" title="Sky"></button>
               <button type="button" data-value="indigo" style="--sw:${ACCENTS.indigo}" title="Indigo"></button>
               <button type="button" data-value="teal" style="--sw:${ACCENTS.teal}" title="Teal"></button>
+              <button type="button" data-value="white" style="--sw:${ACCENTS.white}" title="White"></button>
             </div>
           </div>
           <div class="jmd-panel-section">
@@ -1043,6 +1084,15 @@
     bar.querySelector('#jmd-expand-all').addEventListener('click', () => setAllEntries(true));
     bar.querySelector('#jmd-collapse-all').addEventListener('click', () => setAllEntries(false));
 
+    bar.querySelector('#jmd-theme-btn').addEventListener('click', () => {
+      state.theme = effectiveTheme() === 'dark' ? 'light' : 'dark';
+      saveState();
+      applyState();
+    });
+
+    panel.querySelectorAll('.jmd-segmented[data-role="theme"] button').forEach(b => {
+      b.addEventListener('click', () => { state.theme = b.dataset.value; saveState(); applyState(); });
+    });
     panel.querySelectorAll('.jmd-segmented[data-role="density"] button').forEach(b => {
       b.addEventListener('click', () => { state.density = b.dataset.value; saveState(); applyState(); });
     });
@@ -1098,11 +1148,20 @@
       setAllEntries(!state.collapseEntries);
       setAllDiffs(!state.collapseDiff);
     });
+
+    if (window.matchMedia) {
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+        if (state.theme === 'auto') applyState();
+      });
+    }
   }
 
   function syncPanelControls() {
     const panel = document.getElementById('jmd-settings-panel');
     if (!panel) return;
+    panel.querySelectorAll('.jmd-segmented[data-role="theme"] button').forEach(b => {
+      b.classList.toggle('jmd-active', b.dataset.value === state.theme);
+    });
     panel.querySelectorAll('.jmd-segmented[data-role="density"] button').forEach(b => {
       b.classList.toggle('jmd-active', b.dataset.value === state.density);
     });
