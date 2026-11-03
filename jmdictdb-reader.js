@@ -21,8 +21,7 @@
    * ============================================================== */
 
   const DEFAULTS = {
-    theme: 'auto',            // 'light' | 'dark' | 'auto'
-    accent: 'classicblue',    // 'classicblue' | 'graphite' | 'green' | 'vermilion' | 'violet'
+    themePreset: 'classic',
     fontSize: 13,             // px, 12-18
     density: 'compact',       // 'compact' | 'comfortable'
     collapseEntries: true,    // collapse each whole submission to one line by default (the main feature)
@@ -51,12 +50,18 @@
 
   function loadState() {
     const saved = gmGet(STORE_KEY, null);
-    if (saved && typeof saved === 'object') return Object.assign({}, DEFAULTS, saved);
-    return Object.assign({}, DEFAULTS);
+    if (!saved || typeof saved !== 'object') return Object.assign({}, DEFAULTS);
+    const loaded = Object.assign({}, DEFAULTS, saved);
+    if (!THEMES[loaded.themePreset]) {
+      loaded.themePreset = legacyThemePreset(saved.theme, saved.accent);
+    }
+    delete loaded.theme;
+    delete loaded.accent;
+    return loaded;
   }
   function saveState() { gmSet(STORE_KEY, state); }
 
-  let state = loadState();
+  let state;
 
   function addStyle(css) {
     try { if (typeof GM_addStyle === 'function') { GM_addStyle(css); return; } } catch (e) { }
@@ -77,16 +82,64 @@
    *    instead of pills — closer to the site's own look, just tidied.
    * ============================================================== */
 
-  const ACCENTS = {
-    graphite: '#333333',
-    slate: '#475569', // neutral gray
-    emerald: '#16A34A', // vibrant green
-    forest: '#15803D', // darker green
-    sky: '#2563EB', // modern blue
-    indigo: '#4F46E5', // soft violet-blue
-    teal: '#0F766E', // blue-green
-    white: '#dddfe2', // white
+  const THEMES = {
+    classic: {
+      label: 'Classic',
+      mode: 'light',
+      colors: {
+        accent: '#333333', accentContrast: '#ffffff',
+        bg: '#ffffff', surface: '#f2f2f2', border: '#bbbbbb', borderLight: '#dddddd',
+        borderStrong: '#888888', text: '#111111', muted: '#555555', inputBg: '#ffffff',
+        inputText: '#111111', green: '#006400', red: '#a00000', amber: '#8a5a00',
+        diffAdd: '#006400', diffDel: '#a00000', diffHunk: '#4a4a8a',
+        visited: '#551A8B', article: '#E8FFF0', pos: '#2f5fb3'
+      }
+    },
+    midnight: {
+      label: 'Midnight',
+      mode: 'dark',
+      colors: {
+        accent: '#8ab4f8', accentContrast: '#10151e',
+        bg: '#171a21', surface: '#222733', border: '#465061', borderLight: '#303846',
+        borderStrong: '#667286', text: '#e5e9f0', muted: '#a9b2c2', inputBg: '#222733',
+        inputText: '#e5e9f0', green: '#83d49a', red: '#f08c8c', amber: '#e6bd70',
+        diffAdd: '#83d49a', diffDel: '#f08c8c', diffHunk: '#a9b6f2',
+        visited: '#d0a6f5', article: '#1d222b', pos: '#a9c7ff'
+      }
+    },
+    cocoa: {
+      label: 'Cocoa',
+      mode: 'light',
+      colors: {
+        accent: '#805b3b', accentContrast: '#ffffff',
+        bg: '#f6efe3', surface: '#ebe0cf', border: '#c7b69d', borderLight: '#dfd1bb',
+        borderStrong: '#927a5e', text: '#35291f', muted: '#756553', inputBg: '#fcf8f0',
+        inputText: '#35291f', green: '#557044', red: '#a34f42', amber: '#95671f',
+        diffAdd: '#557044', diffDel: '#a34f42', diffHunk: '#685b91',
+        visited: '#795783', article: '#fbf6ec', pos: '#526b8b'
+      }
+    },
+    forest: {
+      label: 'Forest',
+      mode: 'light',
+      colors: {
+        accent: '#286b45', accentContrast: '#ffffff',
+        bg: '#f1f5ee', surface: '#e4ecdf', border: '#b8c6b2', borderLight: '#d4dfcf',
+        borderStrong: '#82947b', text: '#202a20', muted: '#566453', inputBg: '#f8fbf6',
+        inputText: '#202a20', green: '#286b45', red: '#a13f38', amber: '#80601e',
+        diffAdd: '#286b45', diffDel: '#a13f38', diffHunk: '#565c9c',
+        visited: '#76528a', article: '#f6faf3', pos: '#405f91'
+      }
+    }
   };
+
+  function legacyThemePreset(theme, accent) {
+    if (theme === 'dark') return 'midnight';
+    if (theme === 'light' && (accent === 'emerald' || accent === 'forest')) return 'forest';
+    return 'classic';
+  }
+
+  state = loadState();
 
   const CSS = `
   :root{
@@ -94,33 +147,7 @@
     --jmd-sans: Verdana, Geneva, Arial, Helvetica, sans-serif;
   }
 
-  html{ --jmd-font-size: 13px; --jmd-accent: ${ACCENTS.graphite}; }
-
-  /* ---- light theme tokens (default) ---- */
-  html, html[data-jmd-theme="light"]{
-    --jmd-bg: #ffffff;
-    --jmd-surface-2: #f2f2f2;
-    --jmd-border: #bbbbbb;
-    --jmd-border-light: #dddddd;
-    --jmd-text: #111111;
-    --jmd-muted: #555555;
-    --jmd-green: #006400;  --jmd-red: #a00000; --jmd-amber: #8a5a00;
-    --jmd-diff-add: #006400; --jmd-diff-del: #a00000; --jmd-diff-hunk: #4a4a8a;
-    --jmd-visited: #551A8B;
-    --jmd-article: #E8FFF0;
-  }
-  html[data-jmd-theme="dark"]{
-    --jmd-bg: #1c1c1c;
-    --jmd-surface-2: #262626;
-    --jmd-border: #444444;
-    --jmd-border-light: #333333;
-    --jmd-text: #dddddd;
-    --jmd-muted: #999999;
-    --jmd-green: #6fce6f;  --jmd-red: #e08080; --jmd-amber: #d3a44e;
-    --jmd-diff-add: #6fce6f; --jmd-diff-del: #e08080; --jmd-diff-hunk: #9aa0e0;
-    --jmd-visited: #c79ef0;
-    --jmd-article: #202120;
-  }
+  html{ --jmd-font-size: 13px; }
 
   /* density tokens */
   html{ --jmd-sp-1:3px; --jmd-sp-2:6px; --jmd-sp-3:9px; --jmd-sp-4:14px; }
@@ -151,10 +178,10 @@
   header.jmd-header .loginout table{ border-collapse:collapse; }
   header.jmd-header .loginout td{ padding:1px 4px; }
   header.jmd-header .loginout input[type="text"], header.jmd-header .loginout input[type="password"]{
-    background: #fff; border:1px solid var(--jmd-border); color:#111; padding:1px 4px;
+    background: var(--jmd-input-bg); border:1px solid var(--jmd-border); color:var(--jmd-input-text); padding:1px 4px;
   }
   header.jmd-header .loginout input[type="submit"]{
-    background: var(--jmd-surface-2); border:1px solid #888; padding:2px 8px; cursor:pointer; font-size:.95em;
+    background: var(--jmd-surface-2); border:1px solid var(--jmd-border-strong); color:var(--jmd-text); padding:2px 8px; cursor:pointer; font-size:.95em;
   }
 
   nav.navlinks{ display:flex; flex-wrap:wrap; gap: var(--jmd-sp-2) 2px; align-items:center; max-width:900px; margin: var(--jmd-sp-2) auto 0; font-size:.86em; }
@@ -216,8 +243,7 @@
   /* senses */
   ol.senses{ margin: var(--jmd-sp-2) 0; padding-left: 1.5em; }
   li.sense{ margin-bottom: var(--jmd-sp-2); }
-  span.pos .abbr{ color: #2f5fb3; text-decoration: underline dotted; cursor: help; }
-  html[data-jmd-theme="dark"] span.pos .abbr{ color:#8fb4f0; }
+  span.pos .abbr{ color: var(--jmd-pos); text-decoration: underline dotted; cursor: help; }
   span.misc .abbr{ color: var(--jmd-amber); text-decoration: underline dotted; cursor: help; }
   span.fld, span.dial{ font-size:.9em; color: var(--jmd-muted); font-style: italic; }
   div.note{ font-style: italic; color: var(--jmd-muted); font-size:.92em; margin: 2px 0; }
@@ -232,7 +258,7 @@
   /* edit button */
   form[action="edform.py"]{ text-align:right; margin: var(--jmd-sp-2) 0; }
   form[action="edform.py"] input[type="submit"]{
-    background: var(--jmd-surface-2); border:1px solid #888; color: var(--jmd-text);
+    background: var(--jmd-surface-2); border:1px solid var(--jmd-border-strong); color: var(--jmd-text);
     padding:2px 10px; cursor:pointer; font-size:.85em;
   }
   div.conj{ margin: var(--jmd-sp-1) 0; font-size:.9em; }
@@ -353,9 +379,8 @@
   #jmd-toolbar-inner{ max-width:900px; margin:0 auto; display:flex; align-items:center; gap:8px; padding:5px 14px; flex-wrap:wrap; }
   #jmd-toolbar .jmd-brand{ font-weight:bold; color: var(--jmd-text); font-size:.9em; white-space:nowrap; }
   #jmd-toolbar .jmd-count{ font-size:.8em; color: var(--jmd-muted); white-space:nowrap; }
-  #jmd-filter{ flex: 1 1 200px; min-width:140px; background:#fff; border:1px solid var(--jmd-border); padding:3px 6px; color:#111; font-size:.88em; }
-  html[data-jmd-theme="dark"] #jmd-filter{ background: var(--jmd-surface-2); color: var(--jmd-text); }
-  .jmd-btn{ background: var(--jmd-surface-2); border:1px solid #888; color: var(--jmd-text); padding:3px 9px; font-size:.82em; cursor:pointer; }
+  #jmd-filter{ flex: 1 1 200px; min-width:140px; background:var(--jmd-input-bg); border:1px solid var(--jmd-border); padding:3px 6px; color:var(--jmd-input-text); font-size:.88em; }
+  .jmd-btn{ background: var(--jmd-surface-2); border:1px solid var(--jmd-border-strong); color: var(--jmd-text); padding:3px 9px; font-size:.82em; cursor:pointer; }
   .jmd-btn:hover{ border-color: var(--jmd-accent); }
 
   #jmd-settings-panel{
@@ -369,13 +394,9 @@
   .jmd-segmented{ display:flex; border:1px solid var(--jmd-border); }
   .jmd-segmented button{ flex:1; background: var(--jmd-bg); border:none; padding:3px 0; cursor:pointer; color: var(--jmd-text); font-size:.92em; }
   .jmd-segmented button + button{ border-left:1px solid var(--jmd-border); }
-  .jmd-segmented button.jmd-active{ background: var(--jmd-accent); color:#fff; }
-  .jmd-swatches{ display:flex; gap:6px; }
-  .jmd-swatches button{ width:18px; height:18px; border:2px solid var(--jmd-border); background: var(--sw); cursor:pointer; padding:0; }
-  .jmd-swatches button.jmd-active{ border-color: var(--jmd-text); }
-  #jmd-opt-editor, #jmd-opt-capHeight, #jmd-opt-myname, #jmd-opt-myemail{ background:#fff; border:1px solid var(--jmd-border); padding:3px 6px; color:#111; box-sizing:border-box; }
-  html[data-jmd-theme="dark"] #jmd-opt-editor, html[data-jmd-theme="dark"] #jmd-opt-capHeight,
-  html[data-jmd-theme="dark"] #jmd-opt-myname, html[data-jmd-theme="dark"] #jmd-opt-myemail{ background: var(--jmd-surface-2); color: var(--jmd-text); }
+  .jmd-segmented button.jmd-active{ background: var(--jmd-accent); color:var(--jmd-accent-contrast); }
+  #jmd-opt-editor, #jmd-opt-capHeight, #jmd-opt-myname, #jmd-opt-myemail{ background:var(--jmd-input-bg); border:1px solid var(--jmd-border); padding:3px 6px; color:var(--jmd-input-text); box-sizing:border-box; }
+  #jmd-theme-preset{ width:100%; background:var(--jmd-input-bg); border:1px solid var(--jmd-border); color:var(--jmd-input-text); padding:4px; }
   #jmd-opt-editor, #jmd-opt-myname, #jmd-opt-myemail{ width:100%; }
   #jmd-opt-capHeight{ width:60px; margin-left:6px; }
   .jmd-panel-actions{ text-align:right; }
@@ -383,7 +404,7 @@
 
   #jmd-top-btn{
     position:fixed; right:14px; bottom:14px; z-index:999999;
-    background: var(--jmd-surface-2); color: var(--jmd-text); border:1px solid #888; padding:3px 8px; font-size:.8em; cursor:pointer;
+    background: var(--jmd-surface-2); color: var(--jmd-text); border:1px solid var(--jmd-border-strong); padding:3px 8px; font-size:.8em; cursor:pointer;
     opacity:0; pointer-events:none; transition: opacity .1s linear;
   }
   #jmd-top-btn.jmd-visible{ opacity:1; pointer-events:auto; }
@@ -397,19 +418,19 @@
    * 4. APPLY STATE -> CSS VARIABLES / DOM CLASSES
    * ============================================================== */
 
-  function effectiveTheme() {
-    if (state.theme === 'auto') {
-      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    }
-    return state.theme;
-  }
-
   function applyState() {
     const html = document.documentElement;
-    html.setAttribute('data-jmd-theme', effectiveTheme());
+    const theme = THEMES[state.themePreset] || THEMES[DEFAULTS.themePreset];
+    html.setAttribute('data-jmd-theme', theme.mode);
+    html.setAttribute('data-jmd-preset', state.themePreset);
+    Object.keys(theme.colors).forEach(key => {
+      const property = key === 'surface'
+        ? '--jmd-surface-2'
+        : '--jmd-' + key.replace(/[A-Z]/g, match => '-' + match.toLowerCase());
+      html.style.setProperty(property, theme.colors[key]);
+    });
     html.setAttribute('data-jmd-density', state.density);
     html.style.setProperty('--jmd-font-size', state.fontSize + 'px');
-    html.style.setProperty('--jmd-accent', ACCENTS[state.accent] || ACCENTS.graphite);
     html.style.setProperty('--jmd-pre-maxh', state.capBlocks ? state.capHeight + 'px' : 'none');
     html.classList.toggle('jmd-diff-off', !state.diffHighlight);
     html.classList.toggle('jmd-dim-searchonly', !!state.dimSearchOnly);
@@ -672,8 +693,7 @@
     table.dataset.jmdWrapped = '1';
 
     const WORD_COL = 0, COUNT_COL = 1, PERC_COL = 2;
-    const accentHex = ACCENTS[state.accent] || ACCENTS.classicblue;
-    const barColor = hexToRgba(accentHex, 0.16);
+    const barColor = hexToRgba(THEMES[state.themePreset].colors.accent, 0.16);
 
     function dataRows() { return Array.from(table.querySelectorAll('tr:not(.jmd-ngram-headrow)')); }
 
@@ -990,29 +1010,14 @@
         <input id="jmd-filter" type="search" placeholder="Filter by seq#, word, reading, editor, gloss\u2026" />
         <button id="jmd-expand-all" class="jmd-btn" type="button">Expand all</button>
         <button id="jmd-collapse-all" class="jmd-btn" type="button">Collapse all</button>
-        <button id="jmd-theme-btn" class="jmd-btn" type="button" title="Toggle light/dark">theme</button>
+        <button id="jmd-theme-btn" class="jmd-btn" type="button" title="Cycle theme presets"></button>
         <button id="jmd-settings-btn" class="jmd-btn" type="button" title="Settings">settings</button>
         <div id="jmd-settings-panel" hidden>
           <div class="jmd-panel-section">
-            <label>Theme</label>
-            <div class="jmd-segmented" data-role="theme">
-              <button type="button" data-value="light">Light</button>
-              <button type="button" data-value="dark">Dark</button>
-              <button type="button" data-value="auto">Auto</button>
-            </div>
-          </div>
-          <div class="jmd-panel-section">
-            <label>Accent color</label>
-            <div class="jmd-swatches" data-role="accent">
-              <button type="button" data-value="graphite" style="--sw:${ACCENTS.graphite}" title="Graphite"></button>
-              <button type="button" data-value="slate" style="--sw:${ACCENTS.slate}" title="Slate"></button>
-              <button type="button" data-value="emerald" style="--sw:${ACCENTS.emerald}" title="Emerald"></button>
-              <button type="button" data-value="forest" style="--sw:${ACCENTS.forest}" title="Forest"></button>
-              <button type="button" data-value="sky" style="--sw:${ACCENTS.sky}" title="Sky"></button>
-              <button type="button" data-value="indigo" style="--sw:${ACCENTS.indigo}" title="Indigo"></button>
-              <button type="button" data-value="teal" style="--sw:${ACCENTS.teal}" title="Teal"></button>
-              <button type="button" data-value="white" style="--sw:${ACCENTS.white}" title="White"></button>
-            </div>
+            <label for="jmd-theme-preset">Theme preset</label>
+            <select id="jmd-theme-preset">
+              ${Object.keys(THEMES).map(key => `<option value="${key}">${THEMES[key].label}</option>`).join('')}
+            </select>
           </div>
           <div class="jmd-panel-section">
             <label>Text size (<span id="jmd-fontsize-val"></span>px)</label>
@@ -1085,21 +1090,21 @@
     bar.querySelector('#jmd-collapse-all').addEventListener('click', () => setAllEntries(false));
 
     bar.querySelector('#jmd-theme-btn').addEventListener('click', () => {
-      state.theme = effectiveTheme() === 'dark' ? 'light' : 'dark';
+      const presets = Object.keys(THEMES);
+      const currentIndex = presets.indexOf(state.themePreset);
+      state.themePreset = presets[(currentIndex + 1) % presets.length];
       saveState();
       applyState();
     });
 
-    panel.querySelectorAll('.jmd-segmented[data-role="theme"] button').forEach(b => {
-      b.addEventListener('click', () => { state.theme = b.dataset.value; saveState(); applyState(); });
+    panel.querySelector('#jmd-theme-preset').addEventListener('change', e => {
+      state.themePreset = e.target.value;
+      saveState();
+      applyState();
     });
     panel.querySelectorAll('.jmd-segmented[data-role="density"] button').forEach(b => {
       b.addEventListener('click', () => { state.density = b.dataset.value; saveState(); applyState(); });
     });
-    panel.querySelectorAll('.jmd-swatches[data-role="accent"] button').forEach(b => {
-      b.addEventListener('click', () => { state.accent = b.dataset.value; saveState(); applyState(); });
-    });
-
     const fs = panel.querySelector('#jmd-fontsize');
     fs.addEventListener('input', () => {
       state.fontSize = parseInt(fs.value, 10);
@@ -1149,24 +1154,17 @@
       setAllDiffs(!state.collapseDiff);
     });
 
-    if (window.matchMedia) {
-      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-        if (state.theme === 'auto') applyState();
-      });
-    }
   }
 
   function syncPanelControls() {
     const panel = document.getElementById('jmd-settings-panel');
     if (!panel) return;
-    panel.querySelectorAll('.jmd-segmented[data-role="theme"] button').forEach(b => {
-      b.classList.toggle('jmd-active', b.dataset.value === state.theme);
-    });
+    panel.querySelector('#jmd-theme-preset').value = state.themePreset;
+    const themeButton = document.getElementById('jmd-theme-btn');
+    themeButton.textContent = 'Theme: ' + THEMES[state.themePreset].label;
+    themeButton.title = 'Current theme: ' + THEMES[state.themePreset].label + '. Click to cycle presets.';
     panel.querySelectorAll('.jmd-segmented[data-role="density"] button').forEach(b => {
       b.classList.toggle('jmd-active', b.dataset.value === state.density);
-    });
-    panel.querySelectorAll('.jmd-swatches[data-role="accent"] button').forEach(b => {
-      b.classList.toggle('jmd-active', b.dataset.value === state.accent);
     });
     const fs = panel.querySelector('#jmd-fontsize');
     fs.value = state.fontSize;

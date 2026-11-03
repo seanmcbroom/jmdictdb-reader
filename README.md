@@ -1,10 +1,4 @@
-
-
-
 # JMdictDB reader
-
-The majority of the code (probably 98%) was written by Claude.
-I mainly "made" this script to refine the editing/reviewing process and add some QOL features.
 
 ## Demo
 
