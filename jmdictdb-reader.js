@@ -22,6 +22,7 @@
 
   const DEFAULTS = {
     themePreset: 'classic',
+    fontFamily: 'sans',       // 'sans' | 'noto' | 'serif'
     fontSize: 13,             // px, 12-18
     density: 'compact',       // 'compact' | 'comfortable'
     collapseEntries: true,    // collapse each whole submission to one line by default (the main feature)
@@ -54,6 +55,9 @@
     const loaded = Object.assign({}, DEFAULTS, saved);
     if (!THEMES[loaded.themePreset]) {
       loaded.themePreset = legacyThemePreset(saved.theme, saved.accent);
+    }
+    if (!FONT_PRESETS[loaded.fontFamily]) {
+      loaded.fontFamily = DEFAULTS.fontFamily;
     }
     delete loaded.theme;
     delete loaded.accent;
@@ -133,6 +137,21 @@
     }
   };
 
+  const FONT_PRESETS = {
+    sans: {
+      label: 'Sans',
+      value: 'Verdana, Geneva, Arial, Helvetica, sans-serif'
+    },
+    serif: {
+      label: 'Serif',
+      value: 'Georgia, "Times New Roman", "Times", serif'
+    },
+    noto: {
+      label: 'Noto Serif JP',
+      value: '"Noto Serif JP", "MS Mincho", "Yu Mincho", "Hiragino Mincho ProN", Georgia, serif'
+    }
+  };
+
   function legacyThemePreset(theme, accent) {
     if (theme === 'dark') return 'midnight';
     if (theme === 'light' && (accent === 'emerald' || accent === 'forest')) return 'forest';
@@ -142,6 +161,13 @@
   state = loadState();
 
   const CSS = `
+  @font-face {
+    font-family: "Noto Serif JP";
+    src: local("Noto Serif JP"), local("Noto Serif JP ExtraLight"),local("Noto Serif JP Variable"), local("Noto Serif JP Variable Font");
+    font-weight: 200 900;
+    font-display: swap;
+  }
+
   :root{
     --jmd-mono: ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
     --jmd-sans: Verdana, Geneva, Arial, Helvetica, sans-serif;
@@ -430,6 +456,8 @@
       html.style.setProperty(property, theme.colors[key]);
     });
     html.setAttribute('data-jmd-density', state.density);
+    const font = FONT_PRESETS[state.fontFamily] || FONT_PRESETS[DEFAULTS.fontFamily];
+    html.style.setProperty('--jmd-sans', font.value);
     html.style.setProperty('--jmd-font-size', state.fontSize + 'px');
     html.style.setProperty('--jmd-pre-maxh', state.capBlocks ? state.capHeight + 'px' : 'none');
     html.classList.toggle('jmd-diff-off', !state.diffHighlight);
@@ -1021,6 +1049,12 @@
             </select>
           </div>
           <div class="jmd-panel-section">
+            <label for="jmd-font-preset">Font</label>
+            <select id="jmd-font-preset">
+              ${Object.keys(FONT_PRESETS).map(key => `<option value="${key}">${FONT_PRESETS[key].label}</option>`).join('')}
+            </select>
+          </div>
+          <div class="jmd-panel-section">
             <label>Text size (<span id="jmd-fontsize-val"></span>px)</label>
             <input type="range" id="jmd-fontsize" min="12" max="18" step="1">
           </div>
@@ -1103,6 +1137,11 @@
       saveState();
       applyState();
     });
+    panel.querySelector('#jmd-font-preset').addEventListener('change', e => {
+      state.fontFamily = e.target.value;
+      saveState();
+      applyState();
+    });
     panel.querySelectorAll('.jmd-segmented[data-role="density"] button').forEach(b => {
       b.addEventListener('click', () => { state.density = b.dataset.value; saveState(); applyState(); });
     });
@@ -1161,6 +1200,7 @@
     const panel = document.getElementById('jmd-settings-panel');
     if (!panel) return;
     panel.querySelector('#jmd-theme-preset').value = state.themePreset;
+    panel.querySelector('#jmd-font-preset').value = state.fontFamily;
     const themeButton = document.getElementById('jmd-theme-btn');
     themeButton.textContent = 'Theme: ' + THEMES[state.themePreset].label;
     themeButton.title = 'Current theme: ' + THEMES[state.themePreset].label + '. Click to cycle presets.';
