@@ -134,6 +134,30 @@
         diffAdd: '#286b45', diffDel: '#a13f38', diffHunk: '#565c9c',
         visited: '#76528a', article: '#f6faf3', pos: '#405f91'
       }
+    },
+    hanami: {
+      label: 'Hanami',
+      mode: 'light',
+      colors: {
+        accent: '#a83e62', accentContrast: '#ffffff',
+        bg: '#fff8fa', surface: '#f6e8ed', border: '#d9b8c5', borderLight: '#ead6de',
+        borderStrong: '#a77a89', text: '#38232b', muted: '#765b64', inputBg: '#fffdfd',
+        inputText: '#38232b', green: '#456b52', red: '#a83e62', amber: '#89621e',
+        diffAdd: '#456b52', diffDel: '#a83e62', diffHunk: '#685b91',
+        visited: '#76518a', article: '#fffafb', pos: '#385e91'
+      }
+    },
+    christmas: {
+      label: 'Christmas',
+      mode: 'light',
+      colors: {
+        accent: '#a51f2b', accentContrast: '#ffffff',
+        bg: '#fffaf0', surface: '#e8f0e5', border: '#b8cdb8', borderLight: '#d4e2d2',
+        borderStrong: '#789478', text: '#30251d', muted: '#5d6b59', inputBg: '#fbfdf8',
+        inputText: '#30251d', green: '#176b45', red: '#a51f2b', amber: '#9a6b0b',
+        diffAdd: '#176b45', diffDel: '#a51f2b', diffHunk: '#65528d',
+        visited: '#76518a', article: '#edf5e9', pos: '#385e91'
+      }
     }
   };
 
@@ -187,6 +211,7 @@
     font-family: var(--jmd-sans) !important;
     font-size: var(--jmd-font-size) !important;
     line-height: 1.4;
+    margin: 0px;
   }
   article {
     background: var(--jmd-article) !important;
