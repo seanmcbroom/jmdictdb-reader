@@ -1,10 +1,15 @@
 // ==UserScript==
 // @name         JMdictDB — Cleaner Reader
 // @namespace    https://www.edrdg.org/jmwsgi/
-// @version      2.1.0
+// @version      2.2.0
 // @description  Tames JMdictDB's Submissions/Edits/Entry pages by making whole entries collapsible ([+]/[-] to a one-line summary), plus a filter box and light tidy-up. Diffs auto-collapse too, and each entry gets a one-click N-gram count lookup. Plain, old-web look on purpose — no cards, no shadows, no rounded pills. Nothing is deleted, only collapsed.
-// @author       you
+// @author       Sean McBroom
+// @license      GPL-3.0-or-later
+// @homepageURL  https://github.com/seanmcbroom/jmdictdb-reader
+// @updateURL    https://raw.githubusercontent.com/seanmcbroom/jmdictdb-reader/main/jmdictdb-reader.user.js
+// @downloadURL  https://raw.githubusercontent.com/seanmcbroom/jmdictdb-reader/main/jmdictdb-reader.user.js
 // @match        https://www.edrdg.org/jmwsgi/*
+// @match        https://www.edrdg.org/jmdemo/*
 // @match        https://www.edrdg.org/~jwb/cgi-bin/ngramlookup*
 // @grant        GM_addStyle
 // @grant        GM_setValue
@@ -32,7 +37,9 @@
     capBlocks: true,          // cap the height of long Refs/Comments/Diff blocks
     capHeight: 260,           // px
     dimSearchOnly: true,      // visually de-emphasize sK / sk (search-only) forms
-    highlightEditor: ''       // editor name to spot among many entries
+    highlightEditor: '',      // editor name to spot among many entries
+    savedName: '',            // auto-filled into edform.py Name field
+    savedEmail: ''            // auto-filled into edform.py Email field
   };
 
   const STORE_KEY = 'jmdictdb_cleaner_reader_settings_v2';
@@ -211,8 +218,8 @@
     font-family: var(--jmd-sans) !important;
     font-size: var(--jmd-font-size) !important;
     line-height: 1.4;
-    margin: 0px;
   }
+  html.jmd-enhanced body{ margin: 0 !important; }
   article {
     background: var(--jmd-article) !important;
   }
@@ -525,7 +532,9 @@
         const ol = link.closest('ol.hist-items');
         if (!ol) return;
         ol.querySelectorAll(':scope > li.hist-item.hide').forEach(li => {
-          li.style.display = (li.style.display === 'none') ? '' : 'none';
+          // the site hides these via its .hide class, so check computed style
+          const hidden = getComputedStyle(li).display === 'none';
+          li.style.display = hidden ? 'list-item' : 'none';
         });
       };
       link.addEventListener('click', activate);
@@ -561,6 +570,13 @@
     btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
     btn.innerHTML = '[' + (expanded ? '\u2212' : '+') + '] History ' + btn.querySelector('.jmd-hist-count').outerHTML;
     ol.style.display = expanded ? '' : 'none';
+  }
+
+  function setAllHistory(expanded) {
+    document.querySelectorAll('button.jmd-hist-toggle').forEach(btn => {
+      const ol = btn.parentElement && btn.parentElement.querySelector(':scope > ol.hist-items');
+      if (ol) setHistoryExpanded(btn, ol, expanded);
+    });
   }
 
   function escapeHtml(s) {
@@ -715,7 +731,8 @@
       btn.title = 'Copy "' + terms.join(' ') + '" and open the Google N-gram lookup tool';
 
       btn.addEventListener('click', () => {
-        window.open(`https://www.edrdg.org/~jwb/cgi-bin/ngramlookup?sent=${terms.join('+')}`, '_blank', 'noopener');
+        gmClipboard(terms.join(' '));
+        window.open(`https://www.edrdg.org/~jwb/cgi-bin/ngramlookup?sent=${terms.map(encodeURIComponent).join('+')}`, '_blank', 'noopener');
       });
 
       anchor.appendChild(btn);
@@ -740,7 +757,10 @@
     const WORD_COL = 0, COUNT_COL = 1, PERC_COL = 2;
     const barColor = hexToRgba(THEMES[state.themePreset].colors.accent, 0.16);
 
-    function dataRows() { return Array.from(table.querySelectorAll('tr:not(.jmd-ngram-headrow)')); }
+    function dataRows() {
+      return Array.from(table.querySelectorAll('tr:not(.jmd-ngram-headrow)'))
+        .filter(r => r.cells.length > COUNT_COL && !r.querySelector('th'));
+    }
     const hasMultipleResults = dataRows().filter(row => row.cells[COUNT_COL]).length > 1;
 
     // comma-format the raw counts, stashing the numeric value for later math
@@ -862,7 +882,8 @@
       const shareW = withPct ? Math.max(...rows.map(r => displayWidth(r.share))) : 0;
 
       const lines = [];
-      const title = (document.querySelector('h2') || {}).textContent.trim();
+      const h2 = document.querySelector('h2');
+      const title = h2 ? h2.textContent.trim() : '';
       if (title) { lines.push(title, ''); }
 
       rows.forEach(r => {
@@ -1064,7 +1085,6 @@
         <input id="jmd-filter" type="search" placeholder="Filter by seq#, word, reading, editor, gloss\u2026" />
         <button id="jmd-expand-all" class="jmd-btn" type="button">Expand all</button>
         <button id="jmd-collapse-all" class="jmd-btn" type="button">Collapse all</button>
-        <button id="jmd-theme-btn" class="jmd-btn" type="button" title="Cycle theme presets"></button>
         <button id="jmd-settings-btn" class="jmd-btn" type="button" title="Settings">settings</button>
         <div id="jmd-settings-panel" hidden>
           <div class="jmd-panel-section">
@@ -1149,13 +1169,6 @@
     bar.querySelector('#jmd-expand-all').addEventListener('click', () => setAllEntries(true));
     bar.querySelector('#jmd-collapse-all').addEventListener('click', () => setAllEntries(false));
 
-    bar.querySelector('#jmd-theme-btn').addEventListener('click', () => {
-      const presets = Object.keys(THEMES);
-      const currentIndex = presets.indexOf(state.themePreset);
-      state.themePreset = presets[(currentIndex + 1) % presets.length];
-      saveState();
-      applyState();
-    });
 
     panel.querySelector('#jmd-theme-preset').addEventListener('change', e => {
       state.themePreset = e.target.value;
@@ -1184,6 +1197,7 @@
     });
     panel.querySelector('#jmd-opt-collapseHistory').addEventListener('change', e => {
       state.collapseHistory = e.target.checked; saveState();
+      setAllHistory(!state.collapseHistory);
     });
     panel.querySelector('#jmd-opt-collapseDiff').addEventListener('change', e => {
       state.collapseDiff = e.target.checked; saveState();
@@ -1212,10 +1226,12 @@
     });
 
     panel.querySelector('#jmd-reset-btn').addEventListener('click', () => {
-      state = Object.assign({}, DEFAULTS);
+      // keep the saved identity: reset is for appearance/behavior options
+      state = Object.assign({}, DEFAULTS, { savedName: state.savedName, savedEmail: state.savedEmail });
       saveState();
       applyState();
       setAllEntries(!state.collapseEntries);
+      setAllHistory(!state.collapseHistory);
       setAllDiffs(!state.collapseDiff);
     });
 
@@ -1226,9 +1242,6 @@
     if (!panel) return;
     panel.querySelector('#jmd-theme-preset').value = state.themePreset;
     panel.querySelector('#jmd-font-preset').value = state.fontFamily;
-    const themeButton = document.getElementById('jmd-theme-btn');
-    themeButton.textContent = 'Theme: ' + THEMES[state.themePreset].label;
-    themeButton.title = 'Current theme: ' + THEMES[state.themePreset].label + '. Click to cycle presets.';
     panel.querySelectorAll('.jmd-segmented[data-role="density"] button').forEach(b => {
       b.classList.toggle('jmd-active', b.dataset.value === state.density);
     });
@@ -1288,6 +1301,7 @@
   function init() {
     const isJmdictdbPage = !!document.querySelector('header.jmd-header, main.jmd-content');
     if (isJmdictdbPage) {
+      document.documentElement.classList.add('jmd-enhanced');
       classifyStatusAndStat();
       fixOlderHistoryToggle();
       buildHistoryCollapsers();
