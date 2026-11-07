@@ -7,7 +7,7 @@ A Tampermonkey userscript that makes the [JMdictDB](https://www.edrdg.org/jmwsgi
 - Whole entries collapse to a one-line summary (`[+]`/`[-]`), and diff and history blocks can collapse too.
 - A filter box, plus highlighting of a chosen editor's entries.
 - Colorized diffs and theme and font presets, kept to a deliberately plain, old-web look.
-- A one-click N-gram count lookup for each entry, plus a cleaner N-gram results page with sorting, percentages and copy-as-text.
+- A Tools menu per entry (N-gram counts, Kotobank, Weblio, Eijiro, Wadoku, WWWJDIC, plus a copy-glosses-for-AI action), plus a cleaner N-gram results page with sorting, percentages and copy-as-text.
 - Name/Email auto-fill on the edit form.
 
 Nothing on the page is deleted; it's only collapsed.

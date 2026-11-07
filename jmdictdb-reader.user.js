@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         JMdictDB — Cleaner Reader
 // @namespace    https://www.edrdg.org/jmwsgi/
-// @version      2.2.0
-// @description  Tames JMdictDB's Submissions/Edits/Entry pages by making whole entries collapsible ([+]/[-] to a one-line summary), plus a filter box and light tidy-up. Diffs auto-collapse too, and each entry gets a one-click N-gram count lookup. Plain, old-web look on purpose — no cards, no shadows, no rounded pills. Nothing is deleted, only collapsed.
+// @version      2.3.0
+// @description  Tames JMdictDB's Submissions/Edits/Entry pages by making whole entries collapsible ([+]/[-] to a one-line summary), plus a filter box and light tidy-up. Diffs auto-collapse too, and each entry gets a Tools menu (N-gram counts, Kotobank, Weblio and more). Plain, old-web look on purpose — no cards, no shadows, no rounded pills. Nothing is deleted, only collapsed.
 // @author       Sean McBroom
 // @license      GPL-3.0-or-later
 // @homepageURL  https://github.com/seanmcbroom/jmdictdb-reader
@@ -31,6 +31,7 @@
     fontSize: 13,             // px, 12-18
     density: 'compact',       // 'compact' | 'comfortable'
     collapseEntries: true,    // collapse each whole submission to one line by default (the main feature)
+    threadParents: true,      // updates.py: nest parent entries under the child that replaced them (needs reload)
     collapseHistory: false,   // also collapse the History block inside an expanded entry
     collapseDiff: true,       // collapse each Diff block to a one-line [+] toggle by default
     diffHighlight: true,      // colorize +/-/@@ lines inside Diff blocks (text color only)
@@ -377,6 +378,23 @@
   }
   button.jmd-ngram-btn:hover{ color: var(--jmd-text); }
 
+  /* external links menu + threaded parent entries */
+  span.jmd-links-wrap{ position:relative; display:inline-block; }
+  div.jmd-links-menu{
+    display:none; position:absolute; left:0; top:100%; z-index:50; min-width:220px;
+    background: var(--jmd-surface-2); border:1px solid var(--jmd-border); padding:4px 0;
+    font-family: var(--jmd-sans); font-size:.85em;
+  }
+  div.jmd-links-menu.open{ display:block; }
+  div.jmd-links-menu a{ display:block; padding:2px 8px 2px 16px; color: var(--jmd-accent); text-decoration:none; }
+  div.jmd-links-menu button{
+    display:block; width:100%; text-align:left; background:none; border:none; border-top:1px solid var(--jmd-border);
+    margin-top:4px; padding:4px 8px 2px 8px; font: inherit; color: var(--jmd-accent); cursor:pointer;
+  }
+  div.jmd-links-menu button:hover{ color: var(--jmd-text); text-decoration:underline; }
+  div.jmd-links-menu a:hover{ color: var(--jmd-text); text-decoration:underline; }
+  html.jmd-enhanced div.jmd-thread{ margin-left: 24px; border-left:1px solid var(--jmd-border); padding-left: 8px; }
+
   /* diff line coloring: text color only, no background fill (toggle via html.jmd-diff-off) */
   span.d-add{ display:block; color: var(--jmd-diff-add); }
   span.d-del{ display:block; color: var(--jmd-diff-del); }
@@ -391,7 +409,7 @@
   div.notes{ font-size:.82em; color: var(--jmd-muted); margin-top: var(--jmd-sp-2); }
   div.notes a.displink{ font-family: var(--jmd-mono); color: var(--jmd-accent); }
 
-  /* ---- N-gram lookup results page (opened by the N-gram counts button) ---- */
+  /* ---- N-gram lookup results page (opened from the Tools menu) ---- */
   html.jmd-ngram-page body{ max-width: 480px; margin: 32px auto !important; padding: 0 18px; }
   html.jmd-ngram-page h2{ font-size: 1.15em; margin-bottom: var(--jmd-sp-3); }
   html.jmd-ngram-page table{ border-collapse: collapse; width:100%; margin: var(--jmd-sp-2) 0; }
@@ -705,42 +723,191 @@
     });
   }
 
-  // "N-gram counts" button per entry: gathers every kanji/reading headword
-  // form, copies them (space-separated — the lookup tool's own multi-term
-  // syntax) to the clipboard, and opens the tool so the counts are one
-  // paste + submit away. edrdg.org doesn't publish the lookup form's field
-  // names, so a true one-click deep link risked silently breaking — this
-  // is the safer, still one-click-to-the-hard-part version.
-  function buildNgramButtons() {
-    document.querySelectorAll('article.v-entr').forEach(article => {
-      if (article.dataset.jmdNgram) return;
-      const terms = [];
-      article.querySelectorAll('div.kanj span.kanj, div.rdng span.rdng').forEach(el => {
-        const t = el.textContent.trim();
-        if (t && !terms.includes(t)) terms.push(t);
-      });
-      if (!terms.length) return;
+  // Unique, trimmed text of every element matching selector within an entry.
+  function entryForms(article, selector) {
+    const out = [];
+    article.querySelectorAll(selector).forEach(el => {
+      const t = el.textContent.trim();
+      if (t && !out.includes(t)) out.push(t);
+    });
+    return out;
+  }
 
+  // Plain-text summary of an entry (headwords, then numbered senses with POS
+  // tags and glosses) meant to be pasted into an AI chat.
+  function entryToAiText(article, main) {
+    const kanji = entryForms(article, 'div.kanj span.kanj');
+    const readings = entryForms(article, 'div.rdng span.rdng');
+    const lines = ['Headword: ' + main];
+    if (kanji.length) lines.push('Kanji forms: ' + kanji.join(', '));
+    if (readings.length) lines.push('Readings: ' + readings.join(', '));
+    article.querySelectorAll('ol.senses li.sense').forEach((sense, n) => {
+      const pos = Array.from(sense.querySelectorAll('span.pos .abbr')).map(e => e.textContent.trim()).filter(Boolean);
+      const glosses = Array.from(sense.querySelectorAll('ul.glosses li')).map(e => e.textContent.trim()).filter(Boolean);
+      if (!glosses.length) return;
+      lines.push((n + 1) + '. ' + (pos.length ? '[' + pos.join(', ') + '] ' : '') + glosses.join('; '));
+    });
+    return lines.join('\n');
+  }
+
+  // "Tools" menu per entry (idea from stephenmk/edrdg-scripts): lookups on
+  // N-gram tools (searched with every kanji/reading form) and other
+  // dictionary sites (main headword only). $1 is replaced by the URL-encoded
+  // term(s).
+  const EXT_LINKS = [
+    { label: 'N-gram counts (Google)', all: true, url: 'https://www.edrdg.org/~jwb/cgi-bin/ngramlookup?sent=$1' },
+    { label: 'N-gram counts (KM)', all: true, url: 'https://www.edrdg.org/~jwb/cgi-bin/ngramlookupwww?sent=$1' },
+    { label: 'Kotobank', url: 'https://kotobank.jp/search?q=$1' },
+    { label: 'Weblio', url: 'https://www.weblio.jp/content/$1' },
+    { label: 'Eijiro', url: 'https://eow.alc.co.jp/search?q=$1' },
+    { label: 'Wadoku', url: 'https://www.wadoku.de/search/?q=$1' },
+    { label: 'WWWJDIC', url: 'https://www.edrdg.org/cgi-bin/wwwjdic/wwwjdic?1MUQ$1' }
+  ];
+
+  // Conservative inflection helper for the "(inflected)" N-gram link: plain
+  // negative, polite, te, past, conditional (ba) and volitional forms for
+  // regular ichidan / godan / suru verbs, a handful of i-adjective forms, and
+  // noun+する for vs nouns. Irregular or ambiguous cases yield nothing.
+  // GODAN rows: a-, i-, e-, o-stem, then the euphonic (onbin) stem for te/ta.
+  const GODAN = {
+    'う': ['わ', 'い', 'え', 'お', 'っ'],
+    'く': ['か', 'き', 'け', 'こ', 'い'],
+    'ぐ': ['が', 'ぎ', 'げ', 'ご', 'い'],
+    'す': ['さ', 'し', 'せ', 'そ', 'し'],
+    'つ': ['た', 'ち', 'て', 'と', 'っ'],
+    'ぬ': ['な', 'に', 'ね', 'の', 'ん'],
+    'ぶ': ['ば', 'び', 'べ', 'ぼ', 'ん'],
+    'む': ['ま', 'み', 'め', 'も', 'ん'],
+    'る': ['ら', 'り', 'れ', 'ろ', 'っ']
+  };
+  function inflectedForms(main, tags) {
+    const has = re => tags.some(t => re.test(t));
+    const stem = main.slice(0, -1);
+    const last = main.slice(-1);
+    const out = [];
+    if (has(/^adj-i$/) && last === 'い') {
+      ['くない', 'くて', 'かった', 'ければ'].forEach(e => out.push(stem + e));
+    } else if (has(/^v1$/) && last === 'る') {
+      ['ない', 'ます', 'て', 'た', 'れば', 'よう'].forEach(e => out.push(stem + e));
+    } else if (has(/^vs-[is]$/) && main.endsWith('する') && main.length > 2) {
+      const base = main.slice(0, -2);
+      ['しない', 'します', 'して', 'した', 'すれば', 'しよう'].forEach(e => out.push(base + e));
+    } else if (has(/^v5[a-z]$|^v5k-s$|^v5u-s$/) && GODAN[last]) {
+      const [a, i, e, o, onbin] = GODAN[last];
+      const voiced = 'ぐぬぶむ'.includes(last);
+      const te = has(/^v5k-s$/) ? 'っ' : onbin;            // 行く -> 行って
+      const teEnd = voiced ? 'で' : 'て';
+      const taEnd = voiced ? 'だ' : 'た';
+      out.push(stem + a + 'ない', stem + i + 'ます');
+      if (has(/^v5u-s$/)) out.push(main + 'て', main + 'た');   // 問う -> 問うて / 問うた
+      else out.push(stem + te + teEnd, stem + te + taEnd);
+      out.push(stem + e + 'ば', stem + o + 'う');
+    } else if (has(/^vs$/) && !main.endsWith('する')) {
+      out.push(main + 'する');
+    }
+    return out;
+  }
+
+  function closeLinkMenus(except) {
+    document.querySelectorAll('.jmd-links-menu.open').forEach(m => { if (m !== except) m.classList.remove('open'); });
+  }
+
+  function buildLinkMenus() {
+    document.addEventListener('click', e => {
+      if (!e.target.closest || !e.target.closest('.jmd-links-wrap')) closeLinkMenus();
+    });
+    document.querySelectorAll('article.v-entr').forEach(article => {
+      if (article.dataset.jmdLinks) return;
+      // main headword: first kanji form, else first reading
+      const forms = entryForms(article, 'div.kanj span.kanj, div.rdng span.rdng');
+      const main = entryForms(article, 'div.kanj span.kanj')[0] || entryForms(article, 'div.rdng span.rdng')[0];
+      if (!main) return;
       const anchor = article.querySelector('div.rdng') || article.querySelector('div.kanj');
       if (!anchor) return;
 
+      const wrap = document.createElement('span');
+      wrap.className = 'jmd-links-wrap';
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'jmd-ngram-btn';
-      btn.textContent = 'N-gram counts';
-      btn.title = 'Copy "' + terms.join(' ') + '" and open the Google N-gram lookup tool';
+      btn.textContent = 'Tools';
+      const menu = document.createElement('div');
+      menu.className = 'jmd-links-menu';
 
-      btn.addEventListener('click', () => {
-        gmClipboard(terms.join(' '));
-        window.open(`https://www.edrdg.org/~jwb/cgi-bin/ngramlookup?sent=${terms.map(encodeURIComponent).join('+')}`, '_blank', 'noopener');
+      EXT_LINKS.forEach(l => {
+        const a = document.createElement('a');
+        a.href = l.url.replace('$1', () => (l.all ? forms : [main]).map(encodeURIComponent).join('+'));
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = l.label;
+        menu.appendChild(a);
       });
 
-      anchor.appendChild(btn);
-      article.dataset.jmdNgram = '1';
+      const tags = Array.from(article.querySelectorAll('span.pos .abbr')).map(e => e.textContent.trim());
+      const infl = inflectedForms(main, tags);
+      if (infl.length) {
+        const a = document.createElement('a');
+        a.href = EXT_LINKS[0].url.replace('$1', () => [main].concat(infl).map(encodeURIComponent).join('+'));
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = 'N-gram counts (inflected)';
+        a.title = [main].concat(infl).join(' ');
+        menu.insertBefore(a, menu.children[2] || null);
+      }
+
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.textContent = 'Copy glosses (for AI)';
+      copy.addEventListener('click', () => {
+        gmClipboard(entryToAiText(article, main));
+        copy.textContent = 'Copied!';
+        setTimeout(() => { copy.textContent = 'Copy glosses (for AI)'; }, 1200);
+      });
+      menu.appendChild(copy);
+
+      btn.addEventListener('click', () => {
+        const willOpen = !menu.classList.contains('open');
+        closeLinkMenus(menu);
+        menu.classList.toggle('open', willOpen);
+      });
+      wrap.append(btn, menu);
+      anchor.appendChild(wrap);
+      article.dataset.jmdLinks = '1';
     });
   }
 
-  // The N-gram lookup tool (opened by the "N-gram counts" button) returns a
+  // On updates.py, nest each parent entry under the child that supersedes it,
+  // so a chain of edits reads as one thread (parents collapse via the usual
+  // entry collapsers). Entry id / parent id come from the .pkid links.
+  function threadParentEntries() {
+    if (!/\/updates\.py$/.test(location.pathname) || /[?&]i=/.test(location.search)) return;
+    const byId = new Map();
+    const info = [];
+    document.querySelectorAll('article.v-entr').forEach(article => {
+      const links = article.querySelectorAll('.pkid a');
+      if (links.length < 2) return;
+      const id = links[0].textContent.trim();
+      const parent = links[1].textContent.trim();
+      byId.set(id, article);
+      info.push({ article, id, parent });
+    });
+    // place children before their parents: walk newest-first so a parent is
+    // moved only after its own child has been positioned
+    info.forEach(({ article, parent }) => {
+      const parentArticle = byId.get(parent);
+      if (!parentArticle || parentArticle === article || parentArticle.dataset.jmdThreaded) return;
+      let holder = article.nextElementSibling;
+      if (!holder || !holder.classList.contains('jmd-thread')) {
+        holder = document.createElement('div');
+        holder.className = 'jmd-thread';
+        article.after(holder);
+      }
+      holder.appendChild(parentArticle);
+      parentArticle.dataset.jmdThreaded = '1';
+    });
+  }
+
+  // The N-gram lookup tool (opened from the Tools menu) returns a
   // bare, 1990s-style HTML page with a plain <TABLE> of word/count/percent.
   // This adds per-row checkboxes to include/exclude terms from the percentage
   // math, a sort button, and a copy-to-clipboard that exports a plain
@@ -895,6 +1062,42 @@
       return lines.join('\n');
     }
 
+    // Box-drawn variant (idea from stephenmk/edrdg-scripts): title, then a
+    // bordered table; unchecked rows show N/A in the share column.
+    function tableToBoxText() {
+      let withPct = false;
+      dataRows().forEach(row => {
+        const cb = row.querySelector('input[type="checkbox"]');
+        if (hasMultipleResults && cb && cb.checked) withPct = true;
+      });
+      const rows = dataRows().map(row => {
+        const pct = hasMultipleResults ? row.cells[PERC_COL].dataset.pct : '';
+        return {
+          term: row.cells[WORD_COL].textContent.trim(),
+          count: row.cells[COUNT_COL].textContent.trim(),
+          share: withPct ? (pct ? pct + '%' : 'N/A') : ''
+        };
+      });
+      const termW = Math.max(...rows.map(r => displayWidth(r.term)));
+      const countW = Math.max(...rows.map(r => displayWidth(r.count)));
+      const shareW = withPct ? Math.max(...rows.map(r => displayWidth(r.share))) : 0;
+      const widths = withPct ? [termW, countW, shareW] : [termW, countW];
+      const border = (l, m, r) => l + widths.map(w => '─'.repeat(w + 2)).join(m) + r;
+
+      const lines = [];
+      const h2 = document.querySelector('h2');
+      const title = h2 ? h2.textContent.trim() : '';
+      if (title) lines.push(title);
+      lines.push(border('╭', '┬', '╮'));
+      rows.forEach(r => {
+        let line = '│ ' + padEndVisual(r.term, termW) + ' │ ' + padStartVisual(r.count, countW) + ' │';
+        if (withPct) line += ' ' + padStartVisual(r.share, shareW) + ' │';
+        lines.push(line);
+      });
+      lines.push(border('╰', '┴', '╯'));
+      return lines.join('\n');
+    }
+
     function refreshPreview() {
       const pre = document.getElementById('jmd-ngram-preview');
       if (pre) pre.textContent = tableToText();
@@ -930,7 +1133,8 @@
     const controls = document.createElement('div');
     controls.className = 'jmd-ngram-controls';
     controls.innerHTML = `
-      <button type="button" id="jmd-ngram-copy" class="jmd-btn">Copy to clipboard</button>`;
+      <button type="button" id="jmd-ngram-copy" class="jmd-btn">Copy to clipboard</button>
+      <button type="button" id="jmd-ngram-copy-box" class="jmd-btn">Copy as box table</button>`;
     total.after(controls);
 
     const preview = document.createElement('pre');
@@ -938,13 +1142,17 @@
     preview.id = 'jmd-ngram-preview';
     controls.after(preview);
 
-    controls.querySelector('#jmd-ngram-copy').addEventListener('click', function () {
-      gmClipboard(tableToText());
-      const btn = this;
-      const original = btn.textContent;
-      btn.textContent = 'Copied!';
-      setTimeout(() => { btn.textContent = original; }, 1200);
-    });
+    const wireCopy = (id, getText) => {
+      controls.querySelector(id).addEventListener('click', function () {
+        gmClipboard(getText());
+        const btn = this;
+        const original = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = original; }, 1200);
+      });
+    };
+    wireCopy('#jmd-ngram-copy', tableToText);
+    wireCopy('#jmd-ngram-copy-box', tableToBoxText);
 
     sortTable();
     displayPercentages(); // also renders the first preview
@@ -1114,6 +1322,9 @@
             <label><input type="checkbox" id="jmd-opt-collapseEntries"> Collapse submissions by default</label>
           </div>
           <div class="jmd-panel-section jmd-check-row">
+            <label><input type="checkbox" id="jmd-opt-threadParents"> Nest parent entries under children (updates page, reload)</label>
+          </div>
+          <div class="jmd-panel-section jmd-check-row">
             <label><input type="checkbox" id="jmd-opt-collapseHistory"> Also collapse History when expanded</label>
           </div>
           <div class="jmd-panel-section jmd-check-row">
@@ -1195,6 +1406,9 @@
       state.collapseEntries = e.target.checked; saveState();
       setAllEntries(!state.collapseEntries);
     });
+    panel.querySelector('#jmd-opt-threadParents').addEventListener('change', e => {
+      state.threadParents = e.target.checked; saveState();
+    });
     panel.querySelector('#jmd-opt-collapseHistory').addEventListener('change', e => {
       state.collapseHistory = e.target.checked; saveState();
       setAllHistory(!state.collapseHistory);
@@ -1249,6 +1463,7 @@
     fs.value = state.fontSize;
     panel.querySelector('#jmd-fontsize-val').textContent = state.fontSize;
     panel.querySelector('#jmd-opt-collapseEntries').checked = state.collapseEntries;
+    panel.querySelector('#jmd-opt-threadParents').checked = state.threadParents;
     panel.querySelector('#jmd-opt-collapseHistory').checked = state.collapseHistory;
     panel.querySelector('#jmd-opt-collapseDiff').checked = state.collapseDiff;
     panel.querySelector('#jmd-opt-diffHighlight').checked = state.diffHighlight;
@@ -1307,8 +1522,9 @@
       buildHistoryCollapsers();
       highlightDiffs();
       buildDiffCollapsers();
-      buildNgramButtons();
+      buildLinkMenus();
       tidyNavSeparators();
+      if (state.threadParents) threadParentEntries();
       buildEntryCollapsers();
       buildToolbar();
       buildBackToTop();
